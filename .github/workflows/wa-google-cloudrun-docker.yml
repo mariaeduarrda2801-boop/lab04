@@ -1,41 +1,51 @@
+
 name: GCP Deploy
 on:
   push
+ 
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+ 
       - name: Install dependencies
         run: npm install
+ 
       - name: Lint
-        id : lint-step
+        id: lint-step
         #continue-on-error: true
         run: npm run lint
+ 
       - name: check-lint
         if: failure() && steps.lint-step.outcome == 'failure'
         run: echo "Codigo precisa ser revisto!!"
+ 
   build_docker:
     needs: lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+ 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
+        uses: docker/setup-buildx-action@v3
+ 
       - name: Login to DockerHub
-        uses: docker/login-action@v1
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+ 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v5
         with:
           context: ./
+          file: ./Dockerfile
           push: true
-          dockerfile: ./Dockerfile   # Specify the path to your Dockerfile here
           tags: dudafreitas/webacademy:latest
+ 
   deploy:
     needs: lint
     name: Setup Gcloud Account
@@ -46,27 +56,32 @@ jobs:
     steps:
       # Git checkout
       - name: Checkout
-        uses: actions/checkout@v3
-
-      # Login to GCP
+        uses: actions/checkout@v4
+ 
+      # Login to GCP (usa o secret GCP_CREDENTIALS com o JSON da chave)
       - name: LoginCCP
-        uses: google-github-actions/setup-gcloud@v0
+        uses: google-github-actions/auth@v2
         with:
-          service_account_key: ${{ secrets.GCP_CREDENTIALS }}
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+ 
+      # Instala/configura o gcloud com o projeto
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
-
+ 
       # gcloud configure docker
       - name: Configure Docker
         run: gcloud auth configure-docker --quiet
-
+ 
       # build image
       - name: Build Docker image
         run: docker build -t $IMAGE_NAME .
-
+ 
       # push image to registry
       - name: Push Docker image
         run: docker push $IMAGE_NAME
-
+ 
       # deploy image
       - name: Deploy Docker image
         run: gcloud run deploy wacicd --image $IMAGE_NAME --region us-west1 --memory 128Mi --min-instances 0 --max-instances 1 --platform managed --port 8080 --allow-unauthenticated
